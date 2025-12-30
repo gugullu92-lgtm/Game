@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Evolving Base – Updates 1-4</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { margin:0; background:#050814; color:white; font-family:Arial,sans-serif; text-align:center;}
+#hud {padding:10px; background:#0c1430; display:flex; justify-content:space-around; align-items:center;}
+#game {position:relative; height:70vh; background:radial-gradient(circle, #1b2b6f, #02030a); overflow:hidden;}
+#base {position:absolute; width:60px; height:60px; background:#4af; border-radius:14px; left:50%; top:50%; transform:translate(-50%,-50%); box-shadow:0 0 20px #4af;}
+.turret {position:absolute; width:10px; height:10px; background:#ffd700; border-radius:50%;}
+.enemy {position:absolute; width:18px; height:18px; background:crimson; border-radius:50%;}
+.boss {width:40px; height:40px; background:purple; border-radius:50%; box-shadow:0 0 15px magenta;}
+.bullet {position:absolute; width:6px; height:6px; background:#fff45c; border-radius:50%;}
+#evolve {display:none; background:#0a1130; padding:12px;}
+.card {background:#1b275a; margin:10px; padding:12px; border-radius:12px; cursor:pointer;}
+.card:hover{background:#2f44a0;}
+button{padding:8px 14px; font-size:15px;}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div>Wave <span id="wave">1</span></div>
+  <div>HP <span id="hp">100</span>/<span id="maxhp">100</span></div>
+  <button onclick="panicShield()">PANIC SHIELD</button>
+</div>
+
+<div id="game">
+  <div id="base"></div>
+</div>
+
+<div id="evolve">
+  <h3>EVOLVE YOUR BASE</h3>
+  <div id="cards"></div>
+</div>
+
+<script>
+const game = document.getElementById("game");
+const base = document.getElementById("base");
+const waveTxt = document.getElementById("wave");
+const hpTxt = document.getElementById("hp");
+const maxHpTxt = document.getElementById("maxhp");
+const evolveBox = document.getElementById("evolve");
+const cardsDiv = document.getElementById("cards");
+
+let wave=1,maxHP=100,hp=100,turretCount=1,fireRate=900,damage=10,shield=false;
+let enemies=[],bullets=[],turrets=[];
+
+// --- Turret setup
+function updateTurrets(){
+  turrets.forEach(t=>t.remove());
+  turrets=[];
+  for(let i=0;i<turretCount;i++){
+    const t=document.createElement("div");
+    t.className="turret";
+    game.appendChild(t);
+    turrets.push(t);
+  }
+}
+updateTurrets();
+
+// --- Spawn enemies
+function spawnEnemy(boss=false){
+  const e=document.createElement("div");
+  e.className=boss?"enemy boss":"enemy";
+  e.hp=boss?400+wave*50:30+wave*10;
+  e.speed=boss?0.3:0.8+wave*0.02;
+  const side=Math.floor(Math.random()*4);
+  if(side===0){e.x=-20;e.y=Math.random()*game.clientHeight;}
+  if(side===1){e.x=game.clientWidth+20;e.y=Math.random()*game.clientHeight;}
+  if(side===2){e.x=Math.random()*game.clientWidth;e.y=-20;}
+  if(side===3){e.x=Math.random()*game.clientWidth;e.y=game.clientHeight+20;}
+  game.appendChild(e);
+  enemies.push(e);
+}
+
+// --- Shooting system
+function shoot(){
+  enemies.forEach(enemy=>{
+    turrets.forEach((t,i)=>{
+      const angle=(Date.now()/600 + i*(Math.PI*2/turretCount));
+      const cx=game.clientWidth/2;
+      const cy=game.clientHeight/2;
+      t.style.left=cx+Math.cos(angle)*40+"px";
+      t.style.top=cy+Math.sin(angle)*40+"px";
+      const b=document.createElement("div");
+      b.className="bullet";
+      b.x=cx;b.y=cy;
+      const dx=enemy.x-cx,dy=enemy.y-cy;
+      const d=Math.hypot(dx,dy);
+      b.vx=dx/d*5;b.vy=dy/d*5;
+      game.appendChild(b);bullets.push(b);
+    });
+  });
+}
+
+// --- Game update loop
+function update(){
+  enemies.forEach((e,i)=>{
+    const dx=game.clientWidth/2-e.x;
+    const dy=game.clientHeight/2-e.y;
+    const d=Math.hypot(dx,dy);
+    e.x+=dx/d*e.speed;e.y+=dy/d*e.speed;
+    e.style.left=e.x+"px";e.style.top=e.y+"px";
+    if(d<35 && !shield){hp-=1;hpTxt.textContent=hp;if(hp<=0){alert("CORE DESTROYED – Wave "+wave);location.reload();}}
+  });
+
+  bullets.forEach((b,i)=>{
+    b.x+=b.vx;b.y+=b.vy;b.style.left=b.x+"px";b.style.top=b.y+"px";
+    enemies.forEach((e,j)=>{
+      if(Math.hypot(b.x-e.x,b.y-e.y)<14){e.hp-=damage;b.remove();bullets.splice(i,1);if(e.hp<=0){e.remove();enemies.splice(j,1);}}
+    });
+  });
+
+  if(enemies.length===0 && evolveBox.style.display==="none"){evolveBox.style.display="block";showEvolutions();}
+  requestAnimationFrame(update);
+}
+
+// --- Evolution pool for first 4 updates
+const evolutionPool=[
+  {n:"Fortify Core", d:"+40 Max HP", f:()=>{maxHP+=40;hp+=40;base.style.width="70px";base.style.height="70px";}},
+  {n:"Add Turret", d:"+1 Turret", f:()=>{turretCount++;updateTurrets();}},
+  {n:"Overclock Guns", d:"Faster Fire", f:()=>{fireRate=Math.max(300,fireRate-150);}},
+  {n:"High Caliber", d:"+Damage", f:()=>{damage+=5;}}
+];
+
+function showEvolutions(){
+  cardsDiv.innerHTML="";
+  const choices=evolutionPool.sort(()=>0.5-Math.random()).slice(0,3);
+  choices.forEach(e=>{
+    const c=document.createElement("div");
+    c.className="card"; c.innerHTML=`<b>${e.n}</b><br>${e.d}`;
+    c.onclick=()=>{e.f();evolveBox.style.display="none";wave++;startWave();};
+    cardsDiv.appendChild(c);
+  });
+}
+
+// --- Start wave
+function startWave(){
+  waveTxt.textContent=wave;maxHpTxt.textContent=maxHP;hpTxt.textContent=hp;
+  if(wave%5===0)spawnEnemy(true);
+  for(let i=0;i<wave+3;i++)spawnEnemy();
+}
+
+// --- Panic Shield
+function panicShield(){shield=true;base.style.boxShadow="0 0 30px cyan";setTimeout(()=>{shield=false;base.style.boxShadow="0 0 20px #4af";},3000);}
+
+// --- Run game
+setInterval(shoot,fireRate);
+startWave();
+update();
+</script>
+
+</body>
+</html>
