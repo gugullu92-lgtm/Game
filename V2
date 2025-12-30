@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Evolving Base – Updates 5-8</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { margin:0; background:#010217; color:white; font-family:Arial,sans-serif; text-align:center; overflow:hidden;}
+canvas {display:block; margin:0 auto; background:radial-gradient(circle, #1b2b6f, #02030a);}
+#hud {position:absolute; top:0; left:0; width:100%; padding:10px; background:rgba(12,20,48,0.8); display:flex; justify-content:space-around; align-items:center; z-index:10;}
+button{padding:8px 14px; font-size:15px;}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div>Wave <span id="wave">1</span></div>
+  <div>HP <span id="hp">100</span>/<span id="maxhp">100</span></div>
+  <button id="shieldBtn">PANIC SHIELD</button>
+</div>
+
+<canvas id="gameCanvas" width="400" height="600"></canvas>
+
+<script>
+const canvas=document.getElementById("gameCanvas");
+const ctx=canvas.getContext("2d");
+const waveTxt=document.getElementById("wave");
+const hpTxt=document.getElementById("hp");
+const maxHpTxt=document.getElementById("maxhp");
+const shieldBtn=document.getElementById("shieldBtn");
+
+let wave=1,maxHP=100,hp=100,damage=10,shield=false,shieldCD=false;
+let turretCount=1,fireRate=900;
+let enemies=[],bullets=[],particles=[];
+let lastShoot=0;
+
+// Base object
+let base={x:canvas.width/2, y:canvas.height/2, size:30};
+
+// --- Input ---
+shieldBtn.onclick=function(){
+  if(shieldCD)return;
+  shield=true;shieldCD=true;
+  setTimeout(()=>{shield=false;},3000);
+  setTimeout(()=>{shieldCD=false;},10000);
+}
+
+// --- Particle system ---
+function createParticle(x,y,color){
+  particles.push({x,y,vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,r:Math.random()*3+1,life:30,color});
+}
+
+// --- Enemy class
+class Enemy{
+  constructor(x,y,hp,speed,isBoss=false){
+    this.x=x; this.y=y; this.hp=hp; this.speed=speed; this.isBoss=isBoss;
+    this.radius=isBoss?25:10;
+    this.angle=0;
+  }
+  update(){
+    const dx=base.x-this.x;
+    const dy=base.y-this.y;
+    const dist=Math.hypot(dx,dy);
+    this.x+=dx/dist*this.speed;
+    this.y+=dy/dist*this.speed;
+  }
+  draw(){
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);
+    ctx.fillStyle=this.isBoss?'purple':'crimson';
+    ctx.shadowBlur=this.isBoss?15:5;
+    ctx.shadowColor=this.isBoss?'magenta':'red';
+    ctx.fill();
+    ctx.shadowBlur=0;
+  }
+}
+
+// --- Bullet class
+class Bullet{
+  constructor(x,y,vx,vy){
+    this.x=x; this.y=y; this.vx=vx; this.vy=vy;
+    this.r=4;
+  }
+  update(){this.x+=this.vx; this.y+=this.vy;}
+  draw(){
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.r,0,Math.PI*2);
+    ctx.fillStyle="#fff45c"; ctx.fill();
+    createParticle(this.x,this.y,"#fff45c");
+  }
+}
+
+// --- Spawn enemy
+function spawnEnemy(boss=false){
+  const side=Math.floor(Math.random()*4);
+  let x=0,y=0;
+  if(side===0){x=-20;y=Math.random()*canvas.height;}
+  if(side===1){x=canvas.width+20;y=Math.random()*canvas.height;}
+  if(side===2){x=Math.random()*canvas.width;y=-20;}
+  if(side===3){x=Math.random()*canvas.width;y=canvas.height+20;}
+  const e=new Enemy(x,y,boss?400+wave*50:30+wave*10,boss?0.3:0.8+wave*0.02,boss);
+  enemies.push(e);
+}
+
+// --- Shooting
+function shoot(){
+  const now=Date.now();
+  if(now-lastShoot<fireRate)return;
+  lastShoot=now;
+  for(let i=0;i<turretCount;i++){
+    enemies.forEach(enemy=>{
+      const angle=i*0.5+(Math.random()*0.2);
+      const dx=enemy.x-base.x;
+      const dy=enemy.y-base.y;
+      const dist=Math.hypot(dx,dy);
+      const vx=dx/dist*6;
+      const vy=dy/dist*6;
+      bullets.push(new Bullet(base.x,base.y,vx,vy));
+    });
+  }
+}
+
+// --- Evolution system
+const evolutionPool=[
+  {n:"Fortify Core", d:"+40 Max HP", f:()=>{maxHP+=40;hp+=40;base.size+=5;}},
+  {n:"Add Turret", d:"+1 Turret", f:()=>{turretCount++;}},
+  {n:"Overclock Guns", d:"Faster Fire", f:()=>{fireRate=Math.max(200,fireRate-150);}},
+  {n:"High Caliber", d:"+Damage", f:()=>{damage+=5;}},
+  {n:"Repair Wave", d:"Heal 50 HP", f:()=>{hp=Math.min(maxHP,hp+50);}}
+];
+function showEvolutions(){
+  const overlay=document.createElement("div");
+  overlay.style.position="absolute"; overlay.style.top=0; overlay.style.left=0;
+  overlay.style.width="100%"; overlay.style.height="100%";
+  overlay.style.background="rgba(0,0,0,0.7)"; overlay.style.zIndex=20;
+  overlay.style.display="flex"; overlay.style.flexDirection="column";
+  overlay.style.justifyContent="center"; overlay.style.alignItems="center";
+  const title=document.createElement("h3"); title.textContent="EVOLVE YOUR BASE"; overlay.appendChild(title);
+  evolutionPool.sort(()=>0.5-Math.random()).slice(0,3).forEach(e=>{
+    const btn=document.createElement("button"); btn.textContent=e.n+" – "+e.d;
+    btn.onclick=()=>{
+      e.f(); document.body.removeChild(overlay); wave++; startWave();
+    };
+    overlay.appendChild(btn);
+  });
+  document.body.appendChild(overlay);
+}
+
+// --- Wave start
+function startWave(){
+  waveTxt.textContent=wave; hpTxt.textContent=hp; maxHpTxt.textContent=maxHP;
+  enemies=[];
+  bullets=[];
+  if(wave%5===0)spawnEnemy(true);
+  for(let i=0;i<wave+3;i++)spawnEnemy();
+}
+
+// --- Main update loop
+function update(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  
+  // Base
+  ctx.save();
+  ctx.translate(base.x,base.y);
+  ctx.beginPath();
+  ctx.arc(0,0,base.size,0,Math.PI*2);
+  ctx.fillStyle="#4af";
+  ctx.shadowBlur=20; ctx.shadowColor="#4af";
+  ctx.fill();
+  ctx.restore();
+
+  // Enemies
+  enemies.forEach((e,i)=>{
+    e.update(); e.draw();
+    const dx=e.x-base.x,dy=e.y-base.y;
+    if(Math.hypot(dx,dy)<base.size && !shield){hp--;hpTxt.textContent=hp; if(hp<=0){alert("CORE DESTROYED – Wave "+wave); location.reload();}}
+  });
+
+  // Bullets
+  bullets.forEach((b,i)=>{b.update(); b.draw();});
+
+  // Particles
+  particles.forEach((p,i)=>{
+    p.x+=p.vx; p.y+=p.vy; p.life--;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fillStyle=p.color; ctx.fill();
+    if(p.life<=0)particles.splice(i,1);
+  });
+
+  shoot();
+  requestAnimationFrame(update);
+
+  if(enemies.length===0 && !document.querySelector("#evolveOverlay")) showEvolutions();
+}
+
+// --- Run game
+startWave();
+update();
+</script>
+
+</body>
+</html>
